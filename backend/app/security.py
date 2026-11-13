@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
@@ -23,7 +23,7 @@ def verify_password(pw: str, hashed: str) -> bool:
 
 
 def create_token(user: User) -> str:
-    exp = datetime.utcnow() + timedelta(hours=8)
+    exp = datetime.now(timezone.utc) + timedelta(hours=8)
     return jwt.encode({"sub": str(user.id), "role": user.role, "exp": exp}, SECRET, "HS256")
 
 
