@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CLB &amp; Sự kiện sinh viên</title>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--tx:#1f2430;--mut:#6b7280;--pri:#2563eb;--bd:#e5e7eb;--ok:#16a34a;--er:#dc2626}
+@media(prefers-color-scheme:dark){:root{--bg:#111827;--card:#1f2937;--tx:#f3f4f6;--mut:#9ca3af;--bd:#374151}}
+*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:var(--pri);color:#fff}
+main{max-width:900px;margin:0 auto;padding:16px}
+.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:12px}
+button{background:var(--pri);color:#fff;border:0;border-radius:6px;padding:7px 12px;cursor:pointer}
+button.s{background:transparent;color:var(--pri);border:1px solid var(--pri)}button.d{background:var(--er)}button.g{background:var(--ok)}
+button:disabled{opacity:.5;cursor:not-allowed}
+input,textarea,select{width:100%;padding:8px;margin:4px 0 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font:inherit}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1}.row button{flex:none}
+.mut{color:var(--mut);font-size:13px}.badge{background:var(--ok);color:#fff;border-radius:99px;padding:2px 8px;font-size:12px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 16px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none}
+#toast.err{background:var(--er)}#toast.show{opacity:1}
+.auth{max-width:380px;margin:40px auto}
+</style></head><body>
+<header><b>🎓 CLB &amp; Sự kiện sinh viên</b><span id="who"></span></header>
+<main id="app"></main><div id="toast"></div>
+<script>
+const API='/api',$=s=>document.querySelector(s);
+let S={token:localStorage.getItem('t'),user:null,tab:'events',q:''};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=s=>new Date(s).toLocaleString('vi-VN');
+const isMgr=()=>S.user&&['manager','admin'].includes(S.user.role);
+function toast(m,err){const t=$('#toast');t.textContent=m;t.className=err?'err show':'show';setTimeout(()=>t.className='',3000)}
+async function api(p,o={}){
+  const h={...(o.headers||{})};if(S.token)h.Authorization='Bearer '+S.token;
+  if(o.json){h['Content-Type']='application/json';o.body=JSON.stringify(o.json)}
+  const r=await fetch(API+p,{...o,headers:h});
+  if(r.status===401&&S.token){logout();throw new Error('Phiên đăng nhập đã hết hạn')}
+  if(!r.ok){let d=(await r.json().catch(()=>({}))).detail;
+    throw new Error(Array.isArray(d)?d.map(x=>x.loc.slice(1).join('.')+': '+x.msg).join('; '):d||'Lỗi '+r.status)}
+  return o.raw?r:r.status===204?null:r.json()}
+const act=async(f,ok)=>{try{await f();if(ok)toast(ok);render()}catch(e){toast(e.message,true)}};
+function logout(){S.token=S.user=null;localStorage.removeItem('t');render()}
+const form=e=>{e.preventDefault();return Object.fromEntries(new FormData(e.target))};
+
+async function doLogin(e){const f=form(e);act(async()=>{
+  const d=await api('/auth/login',{method:'POST',body:new URLSearchParams({username:f.email,password:f.password})});
+  S.token=d.access_token;localStorage.setItem('t',S.token)})}
+async function doRegister(e){const f=form(e);act(()=>api('/auth/register',{method:'POST',json:f}),'Đăng ký thành công, hãy đăng nhập')}
+const go=t=>{S.tab=t;render()};
+
+async function render(){
+  const app=$('#app');
+  if(S.token&&!S.user){try{S.user=await api('/auth/me')}catch{return}}
+  $('#who').innerHTML=S.user?`${esc(S.user.full_name)} (${S.user.role}) <button class="s" style="color:#fff;border-color:#fff" onclick="logout()">Thoát</button>`:'';
+  if(!S.user){app.innerHTML=`<div class="auth"><div class="card"><h3>Đăng nhập</h3>
+   <form onsubmit="doLogin(event)"><input name="email" placeholder="Email" required><input name="password" type="password" placeholder="Mật khẩu" required><button>Đăng nhập</button></form></div>
+   <div class="card"><h3>Đăng ký sinh viên</h3><form onsubmit="doRegister(event)"><input name="full_name" placeholder="Họ tên" required>
+   <input name="email" placeholder="Email" required><input name="password" type="password" placeholder="Mật khẩu (≥ 6 ký tự)" required><button class="s">Đăng ký</button></form></div></div>`;return}
+  const tabs=[['events','Sự kiện'],['clubs','Câu lạc bộ'],['me','Của tôi'],...(isMgr()?[['manage','Quản lý']]:[])];
+  app.innerHTML=`<div class="tabs">${tabs.map(([k,v])=>`<button class="${S.tab===k?'':'s'}" onclick="go('${k}')">${v}</button>`).join('')}</div><div id="c">Đang tải...</div>`;
+  try{$('#c').innerHTML=await({events:vEvents,clubs:vClubs,me:vMe,manage:vManage}[S.tab])()}catch(e){$('#c').innerHTML=esc(e.message)}}
+
+async function vEvents(){
+  const [ev,clubs,regs,hist]=await Promise.all([api('/events?size=50&q='+encodeURIComponent(S.q)),api('/clubs?size=50'),api('/me/registrations'),api('/me/history')]);
+  const cn=Object.fromEntries(clubs.map(c=>[c.id,c.name])),att=new Set(hist.events.map(h=>h.event_id)),st=S.user.role==='student';
+  return `<input placeholder="Tìm sự kiện... (Enter)" value="${esc(S.q)}" onkeydown="if(event.key==='Enter'){S.q=this.value;render()}">`+
+  (ev.map(e=>{const r=regs.includes(e.id),full=e.registered_count>=e.capacity;return `<div class="card"><b>${esc(e.title)}</b> <span class="mut">· ${esc(cn[e.club_id])}</span>
+   <div class="mut">📍 ${esc(e.location)} · 🕒 ${fmt(e.start_time)} → ${fmt(e.end_time)}</div>
+   <div class="mut">👥 ${e.registered_count}/${e.capacity} · ⭐ ${e.points} điểm</div><p>${esc(e.description)}</p>
+   ${!st?'':att.has(e.id)?'<span class="badge">✓ Đã điểm danh</span>':r?`<div class="row"><input id="code${e.id}" placeholder="Nhập mã điểm danh"><button class="g" onclick="checkin(${e.id})">Điểm danh</button><button class="d" onclick="unreg(${e.id})">Hủy đăng ký</button></div>`
+   :`<button ${full?'disabled':''} onclick="reg(${e.id})">${full?'Đã đủ chỗ':'Đăng ký'}</button>`}</div>`}).join('')||'<p class="mut">Chưa có sự kiện.</p>')}
+const reg=id=>act(()=>api(`/events/${id}/register`,{method:'POST'}),'Đã đăng ký');
+const unreg=id=>act(()=>api(`/events/${id}/register`,{method:'DELETE'}),'Đã hủy đăng ký');
+const checkin=id=>act(async()=>{const d=await api(`/events/${id}/checkin`,{method:'POST',json:{code:$('#code'+id).value.trim()}});toast(`Điểm danh thành công +${d.points} điểm`)});
+
+async function vClubs(){
+  const [clubs,ms]=await Promise.all([api('/clubs?size=50'),api('/me/memberships')]);
+  const m=Object.fromEntries(ms.map(x=>[x.club_id,x.status])),lbl={pending:'Chờ duyệt',approved:'Thành viên',rejected:'Bị từ chối'};
+  return clubs.map(c=>`<div class="card"><b>${esc(c.name)}</b><p class="mut">${esc(c.description)}</p>
+   ${S.user.role!=='student'?'':m[c.id]?`<span class="badge">${lbl[m[c.id]]}</span>`:`<button onclick="join(${c.id})">Xin gia nhập</button>`}</div>`).join('')}
+const join=id=>act(()=>api(`/clubs/${id}/join`,{method:'POST'}),'Đã gửi yêu cầu gia nhập');
+
+async function vMe(){
+  const h=await api('/me/history');
+  return `<div class="card"><h3>⭐ Điểm rèn luyện: ${h.total_points}</h3></div>`+
+  (h.events.map(e=>`<div class="card"><b>${esc(e.title)}</b> <span class="mut">${fmt(e.start_time)}</span> <span class="badge">+${e.points}</span></div>`).join('')||'<p class="mut">Bạn chưa tham gia sự kiện nào.</p>')}
+
+async function vManage(){
+  const clubs=(await api('/clubs?size=50')).filter(c=>S.user.role==='admin'||c.manager_id===S.user.id);
+  const ev=(await api('/events?size=50')).filter(e=>clubs.some(c=>c.id===e.club_id));
+  const mem=await Promise.all(clubs.map(async c=>({c,list:await api(`/clubs/${c.id}/members`)})));
+  return `<div class="card"><h3>Tạo câu lạc bộ</h3><form onsubmit="newClub(event)"><input name="name" placeholder="Tên CLB" required><textarea name="description" placeholder="Mô tả"></textarea><button>Tạo CLB</button></form></div>
+  <div class="card"><h3>Tạo sự kiện</h3><form onsubmit="newEvent(event)">
+   <select name="club_id">${clubs.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+   <input name="title" placeholder="Tên sự kiện" required><input name="location" placeholder="Địa điểm" required><input name="poster_url" placeholder="URL ảnh poster (tuỳ chọn)">
+   <div class="row"><label>Bắt đầu<input type="datetime-local" name="start_time" required></label><label>Kết thúc<input type="datetime-local" name="end_time" required></label></div>
+   <div class="row"><input type="number" name="capacity" placeholder="Số lượng tối đa" required><input type="number" name="points" placeholder="Điểm rèn luyện" value="5"></div>
+   <textarea name="description" placeholder="Mô tả"></textarea><button>Tạo sự kiện</button></form></div>
+  <h3>Thành viên chờ duyệt</h3>${mem.map(({c,list})=>list.filter(m=>m.status==='pending').map(m=>`<div class="card row"><span><b>${esc(m.full_name)}</b> · ${esc(m.email)} <span class="mut">→ ${esc(c.name)}</span></span>
+   <button class="g" onclick="review(${m.id},'approved')">Duyệt</button><button class="d" onclick="review(${m.id},'rejected')">Từ chối</button></div>`).join('')).join('')||'<p class="mut">Không có yêu cầu nào.</p>'}
+  <h3>Điểm danh sự kiện</h3>${ev.map(e=>`<div class="card"><b>${esc(e.title)}</b> <span class="mut">${fmt(e.start_time)}</span>
+   <div class="row" style="margin-top:8px"><button onclick="qr(${e.id})">Tạo mã QR (10 phút)</button><button class="s" onclick="xlsx(${e.id})">Xuất Excel</button></div><div id="qr${e.id}"></div></div>`).join('')}`}
+const newClub=e=>{const f=form(e);act(()=>api('/clubs',{method:'POST',json:f}),'Đã tạo CLB')};
+const newEvent=e=>{const f=form(e);f.club_id=+f.club_id;f.capacity=+f.capacity;f.points=+f.points;if(!f.poster_url)delete f.poster_url;act(()=>api('/events',{method:'POST',json:f}),'Đã tạo sự kiện')};
+const review=(id,status)=>act(()=>api('/memberships/'+id,{method:'PATCH',json:{status}}),'Đã cập nhật');
+async function qr(id){try{const d=await api(`/events/${id}/qr`,{method:'POST'});
+  $('#qr'+id).innerHTML=`<img src="data:image/png;base64,${d.qr_png_base64}" width="170"><div>Mã: <b>${esc(d.code)}</b> <span class="mut">(hết hạn ${fmt(d.expires_at)})</span></div>`}catch(e){toast(e.message,true)}}
+async function xlsx(id){try{const b=await(await api(`/events/${id}/attendances/export`,{raw:true})).blob();
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`diem-danh-${id}.xlsx`;a.click()}catch(e){toast(e.message,true)}}
+render();
+</script></body></html>
