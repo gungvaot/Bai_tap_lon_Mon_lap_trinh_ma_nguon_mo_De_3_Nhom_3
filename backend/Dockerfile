@@ -3,8 +3,10 @@ ENV PYTHONUNBUFFERED=1 TZ=Asia/Ho_Chi_Minh
 WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY alembic.ini .
+COPY migrations migrations
 COPY app app
 RUN useradd -m appuser
 USER appuser
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"]
