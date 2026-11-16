@@ -35,7 +35,7 @@ class EventIn(BaseModel):
     @model_validator(mode="after")
     def check_time(self):
         if self.end_time <= self.start_time:
-            raise ValueError("end_time phải sau start_time")
+            raise ValueError("Giờ kết thúc phải sau giờ bắt đầu")
         return self
 
 
