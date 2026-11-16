@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Club, Membership, User
+from ..models import Club, Event, Membership, User
 from ..schemas import ClubIn, ClubOut, MembershipPatch
 from ..security import current_user, ensure_club_manager, require_roles
 
@@ -32,6 +32,16 @@ def create_club(
     db.commit()
     db.refresh(c)
     return c
+
+
+@router.delete("/clubs/{club_id}", status_code=204)
+def delete_club(club_id: int, user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
+    club = ensure_club_manager(db.get(Club, club_id), user)
+    if db.scalar(select(func.count()).select_from(Event).where(Event.club_id == club.id)):
+        raise HTTPException(409, "CLB vẫn còn sự kiện, hãy xóa các sự kiện trước")
+    db.execute(delete(Membership).where(Membership.club_id == club.id))
+    db.delete(club)
+    db.commit()
 
 
 @router.post("/clubs/{club_id}/join", status_code=201)

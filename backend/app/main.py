@@ -5,8 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-
-from .routers import auth, clubs, events
+from .routers import auth, clubs, events, stats
 from .seed import seed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -30,7 +29,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-for r in (auth.router, clubs.router, events.router):
+for r in (auth.router, clubs.router, events.router, stats.router):
     app.include_router(r)
 
 
