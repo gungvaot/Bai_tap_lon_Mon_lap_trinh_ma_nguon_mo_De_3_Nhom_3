@@ -1,13 +1,18 @@
 import base64
 import io
+import os
+import re
 import secrets
 from datetime import timedelta
+from pathlib import Path
+from uuid import uuid4
 
 import qrcode
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from openpyxl import Workbook
-from sqlalchemy import func, select
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -16,6 +21,10 @@ from ..schemas import CheckinIn, EventIn, EventOut
 from ..security import current_user, ensure_club_manager, require_roles
 
 router = APIRouter(tags=["events"])
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "uploads"))
+MAX_POSTER = 2 * 1024 * 1024  # 2 MB
+# Nhận diện ảnh bằng vài byte đầu file (không tin vào tên file hay content-type do client gửi)
+IMAGE_SIGNS = {b"\xff\xd8\xff": ".jpg", b"\x89PNG\r\n\x1a\n": ".png"}
 FIELDS = ["id", "club_id", "title", "description", "location", "start_time", "end_time",
           "capacity", "points", "poster_url"]
 
@@ -61,6 +70,59 @@ def create_event(
     db.add(e)
     db.commit()
     return to_out(db, e)
+
+
+@router.post("/events/{event_id}/poster", response_model=EventOut)
+def upload_poster(
+    event_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(require_roles("manager", "admin")),
+    db: Session = Depends(get_db),
+):
+    e = get_event(db, event_id)
+    ensure_club_manager(db.get(Club, e.club_id), user)
+    data = file.file.read(MAX_POSTER + 1)
+    if len(data) > MAX_POSTER:
+        raise HTTPException(413, "Ảnh poster tối đa 2 MB")
+    ext = next((x for sign, x in IMAGE_SIGNS.items() if data.startswith(sign)), None)
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        ext = ".webp"
+    if not ext:
+        raise HTTPException(415, "Chỉ nhận ảnh JPG, PNG hoặc WEBP")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    name = uuid4().hex + ext  # tên ngẫu nhiên: không ghi đè, không lộ tên file gốc
+    (UPLOAD_DIR / name).write_bytes(data)
+    remove_poster_file(e.poster_url)  # xóa ảnh cũ đã upload trước đó
+    e.poster_url = os.getenv("ROOT_PATH", "") + "/uploads/" + name
+    db.commit()
+    return to_out(db, e)
+
+
+def remove_poster_file(url: str | None) -> None:
+    prefix = os.getenv("ROOT_PATH", "") + "/uploads/"
+    if url and url.startswith(prefix):
+        (UPLOAD_DIR / url.removeprefix(prefix)).unlink(missing_ok=True)
+
+
+@router.delete("/events/{event_id}", status_code=204)
+def delete_event(event_id: int, user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
+    e = get_event(db, event_id)
+    ensure_club_manager(db.get(Club, e.club_id), user)
+    # đã có người điểm danh thì không xóa, để giữ nguyên điểm rèn luyện của sinh viên
+    if db.scalar(select(func.count()).select_from(Attendance).where(Attendance.event_id == e.id)):
+        raise HTTPException(409, "Sự kiện đã có sinh viên điểm danh, không thể xóa")
+    db.execute(delete(Registration).where(Registration.event_id == e.id))
+    remove_poster_file(e.poster_url)
+    db.delete(e)
+    db.commit()
+
+
+@router.get("/uploads/{name}", include_in_schema=False)
+def poster_file(name: str):
+    # chỉ trả file đúng dạng tên do server sinh ra, chặn kiểu tấn công ../../etc/passwd
+    if not re.fullmatch(r"[0-9a-f]{32}\.(png|jpg|webp)", name) or not (UPLOAD_DIR / name).is_file():
+        raise HTTPException(404, "Không tìm thấy ảnh")
+    return FileResponse(UPLOAD_DIR / name, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.post("/events/{event_id}/register", status_code=201)
@@ -128,24 +190,76 @@ def checkin(event_id: int, data: CheckinIn, user: User = Depends(require_roles("
 @router.get("/events/{event_id}/attendances/export")
 def export(event_id: int, user: User = Depends(require_roles("manager", "admin")), db: Session = Depends(get_db)):
     e = get_event(db, event_id)
-    ensure_club_manager(db.get(Club, e.club_id), user)
+    club = ensure_club_manager(db.get(Club, e.club_id), user)
+    # Lấy mọi sinh viên đã đăng ký, kèm thời điểm điểm danh (nếu có)
     rows = db.execute(
         select(User.full_name, User.email, Attendance.checked_at)
-        .join(Attendance, Attendance.user_id == User.id)
-        .where(Attendance.event_id == event_id)
+        .join(Registration, Registration.user_id == User.id)
+        .outerjoin(Attendance, (Attendance.user_id == User.id) & (Attendance.event_id == e.id))
+        .where(Registration.event_id == e.id)
+        .order_by(User.full_name)
     ).all()
+    present = sum(1 for r in rows if r.checked_at)
+
     wb = Workbook()
     ws = wb.active
-    ws.append(["Họ tên", "Email", "Thời gian điểm danh"])
-    for r in rows:
-        ws.append(list(r))
+    ws.title = "Điểm danh"
+    blue, green, red = "1747A6", "0F8A4B", "C62A2A"
+    thin = Side(style="thin", color="CDD5E2")
+    box = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    ws.merge_cells("A1:F1")
+    ws["A1"] = "DANH SÁCH ĐIỂM DANH SỰ KIỆN"
+    ws["A1"].font = Font(size=15, bold=True, color=blue)
+    ws["A1"].alignment = Alignment(horizontal="center")
+    info = [
+        ("Sự kiện", e.title), ("Câu lạc bộ", club.name), ("Địa điểm", e.location),
+        ("Thời gian", f"{e.start_time:%H:%M} – {e.end_time:%H:%M}, ngày {e.start_time:%d/%m/%Y}"),
+        ("Tổng kết", f"{present}/{len(rows)} sinh viên có mặt · {e.points} điểm rèn luyện/người"),
+    ]
+    for i, (k, v) in enumerate(info, start=3):
+        ws.merge_cells(start_row=i, start_column=1, end_row=i, end_column=2)
+        ws.cell(i, 1, k).font = Font(bold=True, color="5F6B80")
+        ws.merge_cells(start_row=i, start_column=3, end_row=i, end_column=6)
+        ws.cell(i, 3, v)
+
+    head = 9
+    for col, title in enumerate(["STT", "Họ và tên", "Email", "Trạng thái", "Thời gian điểm danh", "Điểm RL"], 1):
+        c = ws.cell(head, col, title)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor=blue)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = box
+    for i, r in enumerate(rows, 1):
+        ok = r.checked_at is not None
+        values = [i, r.full_name, r.email, "Có mặt" if ok else "Vắng",
+                  r.checked_at.strftime("%H:%M:%S %d/%m/%Y") if ok else "", e.points if ok else 0]
+        for col, v in enumerate(values, 1):
+            c = ws.cell(head + i, col, v)
+            c.border = box
+            if i % 2 == 0:
+                c.fill = PatternFill("solid", fgColor="F3F5FA")
+            if col in (1, 4, 5, 6):
+                c.alignment = Alignment(horizontal="center")
+        ws.cell(head + i, 4).font = Font(bold=True, color=green if ok else red)
+    if not rows:
+        ws.merge_cells(start_row=head + 1, start_column=1, end_row=head + 1, end_column=6)
+        ws.cell(head + 1, 1, "Chưa có sinh viên đăng ký").alignment = Alignment(horizontal="center")
+    for col, w in zip("ABCDEF", [6, 28, 32, 12, 22, 9]):
+        ws.column_dimensions[col].width = w
+    ws.row_dimensions[head].height = 22
+    ws.freeze_panes = ws.cell(head + 1, 1)  # cố định dòng tiêu đề khi cuộn
+    ws.page_setup.orientation = "landscape"  # in vừa 1 trang ngang
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="diem-danh-{event_id}.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="diem-danh-su-kien-{event_id}.xlsx"'},
     )
 
 
