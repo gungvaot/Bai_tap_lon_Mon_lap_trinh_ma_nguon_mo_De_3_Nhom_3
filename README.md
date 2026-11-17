@@ -118,7 +118,7 @@ Tất cả đường dẫn đi qua Nginx có tiền tố `/api`. Tài liệu đ�
 | GET | /me/history | Đã đăng nhập | Sự kiện đã tham gia và tổng điểm rèn luyện |
 | GET | /stats/semesters | manager, admin | Thống kê sự kiện theo học kỳ |
 
-Mã trạng thái: `200/201/204` thành công · `401` chưa đăng nhập hoặc token hết hạn · `403` không đủ quyền · `404` không tìm thấy · `409` xung đột nghiệp vụ · `413` file quá lớn · `415` sai định dạng file · `422` dữ liệu không hợp lệ.
+Mã trạng thái: `200/201/204` thành công · `400` sai nghiệp vụ theo thời gian (điểm danh ngoài giờ, mã sai/hết hạn, hủy khi đã bắt đầu) · `401` chưa đăng nhập hoặc token hết hạn · `403` không đủ quyền · `404` không tìm thấy · `409` xung đột nghiệp vụ · `413` file quá lớn · `415` sai định dạng file · `422` dữ liệu không hợp lệ.
 
 ## Cơ sở dữ liệu
 
