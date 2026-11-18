@@ -15,3 +15,5 @@ node_modules/
 pgdata/
 .idea/
 .vscode/
+uploads/
+test_uploads/

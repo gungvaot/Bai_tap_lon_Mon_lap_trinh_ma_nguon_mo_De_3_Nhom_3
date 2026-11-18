@@ -6,7 +6,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY alembic.ini .
 COPY migrations migrations
 COPY app app
-RUN useradd -m appuser
+RUN useradd -m appuser && mkdir -p /srv/uploads && chown appuser /srv/uploads
+ENV UPLOAD_DIR=/srv/uploads
 USER appuser
 EXPOSE 8000
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"]
