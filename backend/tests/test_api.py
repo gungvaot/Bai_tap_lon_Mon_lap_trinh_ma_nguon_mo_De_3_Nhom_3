@@ -104,3 +104,55 @@ def test_export_excel_requires_manager(c):
     eid, mh = new_event(c)
     assert c.get(f"/events/{eid}/attendances/export", headers=student(c, "s5@x.vn")).status_code == 403
     assert c.get(f"/events/{eid}/attendances/export", headers=mh).status_code == 200
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 100
+
+
+def test_upload_poster_ok(c):
+    eid, mh = new_event(c)
+    r = c.post(f"/events/{eid}/poster", headers=mh, files={"file": ("p.png", PNG, "image/png")})
+    assert r.status_code == 200 and r.json()["poster_url"].endswith(".png")
+    assert c.get(r.json()["poster_url"]).status_code == 200
+
+
+def test_upload_poster_rejects_non_image_415(c):
+    eid, mh = new_event(c)
+    r = c.post(f"/events/{eid}/poster", headers=mh, files={"file": ("x.png", b"not an image", "image/png")})
+    assert r.status_code == 415
+
+
+def test_upload_poster_student_403(c):
+    eid, _ = new_event(c)
+    r = c.post(f"/events/{eid}/poster", headers=student(c, "s6@x.vn"), files={"file": ("p.png", PNG, "image/png")})
+    assert r.status_code == 403
+
+
+def test_stats_by_semester(c):
+    _, mh = new_event(c)
+    r = c.get("/stats/semesters", headers=mh)
+    assert r.status_code == 200 and r.json()[0]["events"] >= 1
+    assert c.get("/stats/semesters", headers=student(c, "s7@x.vn")).status_code == 403
+
+
+def test_delete_event_permissions(c):
+    eid, mh = new_event(c)
+    assert c.delete(f"/events/{eid}", headers=student(c, "s8@x.vn")).status_code == 403
+    assert c.delete(f"/events/{eid}", headers=mh).status_code == 204
+    assert c.delete(f"/events/{eid}", headers=mh).status_code == 404
+
+
+def test_delete_event_with_attendance_409(c):
+    eid, mh = new_event(c, cap=5)
+    sh = student(c, "s9@x.vn")
+    c.post(f"/events/{eid}/register", headers=sh)
+    code = c.post(f"/events/{eid}/qr", headers=mh).json()["code"]
+    c.post(f"/events/{eid}/checkin", headers=sh, json={"code": code})
+    assert c.delete(f"/events/{eid}", headers=mh).status_code == 409
+
+
+def test_delete_club(c):
+    h = tok(c, *MGR)
+    cid = c.post("/clubs", headers=h, json={"name": "CLB Tạm"}).json()["id"]
+    assert c.delete(f"/clubs/{cid}", headers=student(c, "s10@x.vn")).status_code == 403
+    assert c.delete(f"/clubs/{cid}", headers=h).status_code == 204
+    assert c.delete("/clubs/1", headers=h).status_code == 409  # CLB 1 còn sự kiện
