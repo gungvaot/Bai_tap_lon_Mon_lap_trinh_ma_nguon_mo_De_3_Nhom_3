@@ -10,12 +10,12 @@ Hệ thống thay cho việc đăng ký qua Google Form và điểm danh bằng 
 
 ## Thành viên và phân công
 
-| TT | Họ và tên | Vai trò | Phân hệ phụ trách | Đóng góp |
-|----|-----------|---------|-------------------|----------|
-| 1 | Nguyễn Đức Duy | Trưởng nhóm, Front-end | Kế hoạch trên GitHub Projects; giao diện, gọi API, màn hình CLB/sự kiện, quét QR | …% |
-| 2 | Phạm Văn Long Thành | Back-end | RESTful API, JWT, phân quyền, tính điểm rèn luyện, upload poster, thống kê | …% |
-| 3 | Ngô Xuân Lộc | CSDL và Kiểm thử | ERD, models, Alembic, seed; Postman, pytest | …% |
-| 4 | Nguyễn Sỹ Duy Anh | DevOps | Dockerfile, docker-compose, Nginx, CI/CD, máy chủ | …% |
+| TT | Họ và tên | Vai trò | Phân hệ phụ trách |
+|----|-----------|---------|-------------------|
+| 1 | Nguyễn Đức Duy | Trưởng nhóm, Front-end | Kế hoạch trên GitHub Projects; giao diện, gọi API, màn hình CLB/sự kiện, quét QR |
+| 2 | Phạm Văn Long Thành | Back-end | RESTful API, JWT, phân quyền, tính điểm rèn luyện, upload poster, thống kê |
+| 3 | Ngô Xuân Lộc | CSDL và Kiểm thử | ERD, models, Alembic, seed; Postman, pytest |
+| 4 | Nguyễn Sỹ Duy Anh | DevOps | Dockerfile, docker-compose, Nginx, CI/CD, máy chủ |
 
 ## Chức năng
 
@@ -155,5 +155,10 @@ ERD: `docs/` *(cập nhật)*
 
 ## Ghi nhận
 
-Ảnh minh họa trong giao diện lấy từ website [hpu.edu.vn](https://hpu.edu.vn/), chỉ dùng cho mục đích học tập.
-Nhóm có dùng công cụ AI (Claude) hỗ trợ; chi tiết từng phần được ghi trong báo cáo.
+Ảnh minh họa trong giao diện lấy từ website [hpu.edu.vn](https://hpu.edu.vn/).
+Nhóm có dùng công cụ AI hỗ trợ:
+- Gợi ý thiết kế giao diện `frontend/index.html` (bố cục, quét QR)
+- Gợi ý mã API upload poster
+- Soạn Postman collection, README và slide thuyết trình
+- Giải thích lệnh Git, Docker, Linux trong quá trình làm
+
