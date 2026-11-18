@@ -759,7 +759,8 @@ function bindManage() {
    ===================================================================== */
 let scanner = null, qrTimer = null;
 function closeModal() {
-  if (scanner) { scanner.stop().catch(()=>{}).finally(()=>scanner.clear?.()); scanner = null; }
+    const sc = scanner; scanner = null;
+  if (sc) { try { Promise.resolve(sc.stop()).catch(()=>{}).finally(()=>{ try { sc.clear(); } catch {} }); } catch {} }
   clearInterval(qrTimer); $("#modal").innerHTML = "";
 }
 function modal(html, wide) {
